@@ -3,7 +3,7 @@ name: Sync PDFs to Cloud Storage
 
 on:
   push:
-    branches: [ main ]
+    branches: [ master ]
     paths:
       - '*.pdf'
   workflow_dispatch:
