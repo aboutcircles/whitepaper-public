@@ -1,5 +1,5 @@
-This repository is to manage the current and former versions for the Circles v2 whitepaper. There is a simple workflow in place that anybody with write access can manually trigger to update the file that will be accessible at whitepaper.aboutcircles.com. 
+This repository is to manage the current and former versions for the Circles v2 whitepaper. There is a simple workflow in place that anybody with write access can trigger to redeploy a version on whitepaper.aboutcircles.com. 
 
-To trigger this workflow, go to https://github.com/aboutcircles/whitepaper-public/actions/workflows/sync-whitepaper-gcpbucket.yml -> Click on Promote PDF to GCS workflow (left tab) -> Run Workflow -> In the dropdown file the filename (as path from root dir).
+This workflow gets triggered whenever changes to current-version.txt are pushed. In that file, the path (from root dir) should be added and will be deployed. This also creates transparency about the current file.
 
 Everywhere else references to the whitepaper should always point to whitepaper.aboutcircles.com
