@@ -2,15 +2,12 @@ name: Promote PDF to GCS
 
 on:
   workflow_dispatch:
-    inputs:
-      pdf_filename:
-        description: 'Optional: PDF filename to promote (leave blank to auto-select newest *.pdf)'
-        required: false
-        default: ''
+  push:
+    paths:
+      - 'current-version.txt'
 
 env:
   GCS_BUCKET: whitepaper-pdfs-91fa25b2
-  DEFAULT_PDF: Circles_Whitepaper_v221.pdf
 
 jobs:
   promote-pdf:
@@ -38,47 +35,39 @@ jobs:
           echo "❌ Bucket not accessible!" && exit 1
         }
 
-    - name: Select PDF to Promote
+    - name: Upload Current Version from Config
       id: select
-      env:
-        DEFAULT_PDF: ${{ env.DEFAULT_PDF }}
       run: |
-        echo "📥 Selecting PDF to promote..."
-
-        INPUT_FILE="${{ github.event.inputs.pdf_filename }}"
-
-        if [ -n "$INPUT_FILE" ]; then
-          SELECTED="$INPUT_FILE"
-          echo "📄 Using manually provided input: $SELECTED"
-        else
-          echo "📦 No input provided. Trying to find newest *.pdf in repo..."
-          SELECTED=$(ls -t *.pdf 2>/dev/null | head -n1 || echo "")
-          if [ -z "$SELECTED" ]; then
-            echo "⚠️ No PDF found in repo. Falling back to default: $DEFAULT_PDF"
-            SELECTED="$DEFAULT_PDF"
-          fi
-        fi
-
-        if [ ! -f "$SELECTED" ]; then
-          echo "❌ File '$SELECTED' not found!"
+        echo "📤 Uploading current PDF version (as per config) to gs://$GCS_BUCKET/"
+        
+        CONFIG_FILE="current-version.txt"
+        
+        if [ ! -f "$CONFIG_FILE" ]; then
+          echo "❌ $CONFIG_FILE not found!"
           exit 1
         fi
 
-        echo "✅ PDF selected: $SELECTED"
-        echo "pdf=$SELECTED" >> $GITHUB_OUTPUT
+        CURRENT_PDF=$(cat "$CONFIG_FILE" | tr -d '[:space:]')
+        
+        if [ ! -f "$CURRENT_PDF" ]; then
+          echo "❌ File '$CURRENT_PDF' listed in $CONFIG_FILE not found!"
+          exit 1
+        fi
 
-    - name: Upload selected PDF as latest.pdf
+        echo "📄 Selected PDF from config: $CURRENT_PDF"
+        echo "pdf=$CURRENT_PDF" >> $GITHUB_OUTPUT
+
+    - name: Upload PDF as latest.pdf
       run: |
         FILE="${{ steps.select.outputs.pdf }}"
-        echo "🚀 Uploading '$FILE' to GCS as 'latest.pdf'..."
-
+        echo "📄 Uploading $FILE → latest.pdf"
         gsutil cp "$FILE" gs://$GCS_BUCKET/latest.pdf
 
-        echo "📦 Setting metadata headers..."
+        # Set content type and cache headers
         gsutil setmeta -h "Content-Type:application/pdf" gs://$GCS_BUCKET/latest.pdf
         gsutil setmeta -h "Cache-Control:public, max-age=3600" gs://$GCS_BUCKET/latest.pdf
 
-        echo "✅ Promotion complete. '$FILE' is now live at:"
+        echo "✅ Upload complete. '$FILE' is now live at:"
         echo "   👉 https://whitepaper.aboutcircles.com"
 
     - name: Verify GCS sync
