@@ -1,23 +1,19 @@
-# Sync updated PDFs to Cloud storage
-name: Sync PDFs to Cloud Storage
+name: Promote PDF to GCS
 
 on:
-  push:
-    branches: [ master ]
-    paths:
-      - '*.pdf'
   workflow_dispatch:
     inputs:
-      dry_run:
-        description: 'Dry run (true/false)'
+      pdf_filename:
+        description: 'Optional: PDF filename to promote (leave blank to auto-select newest *.pdf)'
         required: false
-        default: 'false'
+        default: ''
 
 env:
   GCS_BUCKET: whitepaper-pdfs-91fa25b2
+  DEFAULT_PDF: Circles_Whitepaper_v221.pdf
 
 jobs:
-  sync-pdfs:
+  promote-pdf:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -42,43 +38,51 @@ jobs:
           echo "❌ Bucket not accessible!" && exit 1
         }
 
-    - name: Upload Latest PDF Only
-      if: github.event.inputs.dry_run != 'true'
+    - name: Select PDF to Promote
+      id: select
+      env:
+        DEFAULT_PDF: ${{ env.DEFAULT_PDF }}
       run: |
-        echo "📤 Uploading latest PDF to gs://$GCS_BUCKET/"
+        echo "📥 Selecting PDF to promote..."
 
-        # Find the latest PDF file (prioritize non-Circles_Whitepaper files)
-        echo "📄 Found PDF files:"
-        ls -la ./*.pdf 2>/dev/null || echo "No PDF files found"
-        
-        # First try to find non-Circles_Whitepaper PDFs
-        LATEST_PDF=$(ls -t ./*.pdf 2>/dev/null | grep -v "Circles_Whitepaper" | head -n1)
-        
-        # If no non-Circles_Whitepaper PDFs found, use any PDF
-        if [ -z "$LATEST_PDF" ]; then
-          LATEST_PDF=$(ls -t ./*.pdf 2>/dev/null | head -n1)
-        fi
-        
-        echo "📄 Selected latest PDF: $LATEST_PDF"
-        if [ -n "$LATEST_PDF" ]; then
-          echo "📄 Uploading latest PDF: $LATEST_PDF -> latest.pdf"
-          gsutil cp "$LATEST_PDF" gs://$GCS_BUCKET/latest.pdf
-          
-          # Set content type and cache headers
-          gsutil setmeta -h "Content-Type:application/pdf" gs://$GCS_BUCKET/latest.pdf
-          gsutil setmeta -h "Cache-Control:public, max-age=3600" gs://$GCS_BUCKET/latest.pdf
+        INPUT_FILE="${{ github.event.inputs.pdf_filename }}"
+
+        if [ -n "$INPUT_FILE" ]; then
+          SELECTED="$INPUT_FILE"
+          echo "📄 Using manually provided input: $SELECTED"
         else
-          echo "❌ No PDF files found"
+          echo "📦 No input provided. Trying to find newest *.pdf in repo..."
+          SELECTED=$(ls -t *.pdf 2>/dev/null | head -n1 || echo "")
+          if [ -z "$SELECTED" ]; then
+            echo "⚠️ No PDF found in repo. Falling back to default: $DEFAULT_PDF"
+            SELECTED="$DEFAULT_PDF"
+          fi
+        fi
+
+        if [ ! -f "$SELECTED" ]; then
+          echo "❌ File '$SELECTED' not found!"
           exit 1
         fi
 
-    - name: Upload complete
-      run: |
-        echo "✅ PDF upload completed successfully"
-        echo "🌐 Available at: https://whitepaper.aboutcircles.com"
+        echo "✅ PDF selected: $SELECTED"
+        echo "pdf=$SELECTED" >> $GITHUB_OUTPUT
 
-    - name: Verify sync
+    - name: Upload selected PDF as latest.pdf
       run: |
-        echo "📄 Final list of files in GCS bucket:"
+        FILE="${{ steps.select.outputs.pdf }}"
+        echo "🚀 Uploading '$FILE' to GCS as 'latest.pdf'..."
+
+        gsutil cp "$FILE" gs://$GCS_BUCKET/latest.pdf
+
+        echo "📦 Setting metadata headers..."
+        gsutil setmeta -h "Content-Type:application/pdf" gs://$GCS_BUCKET/latest.pdf
+        gsutil setmeta -h "Cache-Control:public, max-age=3600" gs://$GCS_BUCKET/latest.pdf
+
+        echo "✅ Promotion complete. '$FILE' is now live at:"
+        echo "   👉 https://whitepaper.aboutcircles.com"
+
+    - name: Verify GCS sync
+      run: |
+        echo "📂 Current files in bucket:"
         gsutil ls -l gs://$GCS_BUCKET/
 
